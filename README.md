@@ -4,7 +4,7 @@ Companion lab for the *Premium Training Guide -- VictoriaMetrics as an LLM
 Observability Backend* (Erythix). Implements the **4 labs of Module 13**
 plus 8 bonus tracks demonstrating VM features that PromQL cannot match.
 
-## TL;DR
+## SETUP
 
 ```bash
 git clone https://github.com/erythix4/aiobs-lab
