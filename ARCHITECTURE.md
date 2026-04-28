@@ -17,11 +17,11 @@ x pipeline), and ingestion bursts during batch completions.
 This lab demonstrates a sovereign, air-gap-capable stack built on
 **VictoriaMetrics + OpenTelemetry** that handles those constraints out of
 the box. It implements two ingestion paths (Prometheus client and OTLP), a
-production alert ruleset, a backup-and-restore drill, and a Cluster-mode
+production alert ruleset, a backup-and-restore drill and a Cluster-mode
 variant -- all in one `docker compose up`.
 
 The core thesis: **VictoriaMetrics is a strictly better fit than plain
-Prometheus for LLM observability**, and the lab proves it with three
+Prometheus for LLM observability** and the lab proves it with three
 dashboards and ten labs. See `solutions/lab6-metricsql-exclusive.md` for
 the most direct technical defense.
 
@@ -791,5 +791,5 @@ See README.md for the complete file tree. Key files:
 
 ---
 
-**Contact** Erythix -- formations@erythix.io -- erythix.io
+**Contact** Erythix -- contact@erythix.tech -- erythix.tech
 **Author** Samuel Desseaux, VictoriaMetrics Training Partner FR / Benelux / DE
