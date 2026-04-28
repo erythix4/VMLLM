@@ -204,5 +204,5 @@ make clean        # docker compose down -v on every overlay
 - MetricsQL: https://docs.victoriametrics.com/metricsql
 - Stream aggregation: https://docs.victoriametrics.com/stream-aggregation
 
-Contact: **formations@erythix.io** -- erythix.io
+Contact: **contact@erythix.tech** -- erythix.tech
 *Samuel Desseaux -- VictoriaMetrics Training Partner FR / Benelux / DE*
