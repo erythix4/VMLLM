@@ -1,0 +1,110 @@
+# Production VMAlert rules for LLM observability
+# Reference: Module 9.1 of the training guide
+groups:
+
+  - name: llm_quality
+    interval: 1m
+    rules:
+
+      # RAG index drift — score < 0.70 sustained for 15m
+      - alert: RAGIndexDrift
+        expr: |
+          avg by (index_id, pipeline_id) (
+              avg_over_time(rag_retrieval_score_avg[1h])
+          ) < 0.70
+        for: 15m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: 'RAG index drift on {{ $labels.index_id }}'
+          description: |
+            Mean retrieval score = {{ $value | printf "%.2f" }} < threshold 0.70
+            for 15m on pipeline {{ $labels.pipeline_id }}.
+            Action: check for document updates without re-indexing.
+          runbook_url: 'https://wiki.internal/runbooks/rag-index-drift'
+
+      # Context pressure P95 > 0.85
+      - alert: RAGContextPressureHigh
+        expr: |
+          histogram_quantile(0.95,
+              sum by (le, pipeline_id) (
+                  rate(rag_context_pressure_ratio_bucket[10m])
+              )
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: 'High context pressure P95: {{ $labels.pipeline_id }}'
+          description: 'P95 = {{ $value | printf "%.2f" }}. Reduce system prompt or increase context window.'
+
+      # LLM error rate > 1%
+      - alert: LLMHighErrorRate
+        expr: |
+          sum by (model, provider) (rate(llm_errors_total[5m]))
+            /
+          sum by (model, provider) (rate(llm_requests_total[5m]))
+          > 0.01
+        for: 3m
+        labels:
+          severity: critical
+          team: ai-platform
+        annotations:
+          summary: 'Error rate > 1% on {{ $labels.model }} / {{ $labels.provider }}'
+          description: 'Current rate: {{ $value | printf "%.1f" }}%. Check provider availability.'
+
+      # Latency SLO breach P99 > 5s
+      - alert: LLMLatencySLOBreach
+        expr: |
+          histogram_quantile(0.99,
+              sum by (le, model, pipeline_id) (
+                  rate(llm_request_duration_ms_bucket[5m])
+              )
+          ) > 5000
+        for: 5m
+        labels:
+          severity: critical
+          team: ai-platform
+        annotations:
+          summary: 'P99 latency SLO breach on {{ $labels.model }}'
+          description: 'P99 = {{ $value | printf "%.0f" }}ms > SLO 5000ms. Pipeline {{ $labels.pipeline_id }}'
+
+      # GPU memory > 90%
+      - alert: GPUMemorySaturation
+        expr: DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL * 100 > 90
+        for: 2m
+        labels:
+          severity: warning
+          team: mlops
+        annotations:
+          summary: 'GPU {{ $labels.gpu }} memory saturated ({{ $value | printf "%.0f" }}%)'
+          description: 'OOM risk. Reduce batch size or model context window.'
+
+      # Daily LLM budget — 80% of 100 USD
+      - alert: LLMDailyBudgetWarning
+        expr: |
+          sum by (tenant_id) (
+              increase(llm_cost_usd_total[24h])
+          ) > 80
+        labels:
+          severity: warning
+          team: billing
+        annotations:
+          summary: 'LLM budget at 80% for tenant {{ $labels.tenant_id }}'
+          description: '24h cost = ${{ $value | printf "%.2f" }}. Threshold: $100/day.'
+
+      # TTFT P95 > 2s on streaming endpoints
+      - alert: LLMTTFTHigh
+        expr: |
+          histogram_quantile(0.95,
+              sum by (le, model) (rate(llm_ttft_ms_bucket[5m]))
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: ai-platform
+        annotations:
+          summary: 'TTFT P95 > 2s on {{ $labels.model }}'
+          description: 'TTFT P95 = {{ $value | printf "%.0f" }}ms. Streaming UX degraded.'

@@ -1,0 +1,21 @@
+# Datasource provisioning — Module 8.1
+apiVersion: 1
+datasources:
+  - name: VictoriaMetrics
+    type: victoriametrics-metrics-datasource
+    uid: vm-llm
+    url: http://victoriametrics:8428
+    access: proxy
+    isDefault: true
+    jsonData:
+      timeInterval: '15s'
+
+  # Fallback Prometheus-compat datasource (works without the VM plugin)
+  - name: VictoriaMetrics-Prom
+    type: prometheus
+    uid: vm-llm-prom
+    url: http://victoriametrics:8428
+    access: proxy
+    jsonData:
+      timeInterval: '15s'
+      httpMethod: POST

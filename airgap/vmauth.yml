@@ -1,0 +1,28 @@
+# Module 12.1 -- multi-role vmauth in front of VictoriaMetrics.
+# Three roles: read-only (grafana), write-only (otel-collector), admin.
+
+users:
+
+  # Read-only: query API only
+  - username: 'grafana'
+    password: 'grafana-password'
+    url_prefix:
+      - 'http://victoriametrics:8428/api/v1/query'
+      - 'http://victoriametrics:8428/api/v1/query_range'
+      - 'http://victoriametrics:8428/api/v1/labels'
+      - 'http://victoriametrics:8428/api/v1/series'
+
+  # Write-only: ingestion endpoints
+  - username: 'otel-collector'
+    password: 'otel-password'
+    url_prefix:
+      - 'http://victoriametrics:8428/api/v1/write'
+      - 'http://victoriametrics:8428/opentelemetry/api/v1/push'
+
+  # Admin: everything
+  - username: 'admin'
+    password: 'admin-password'
+    url_prefix: 'http://victoriametrics:8428/'
+
+unauthorized_user:
+  url_prefix: 'http://victoriametrics:8428/-/healthy'

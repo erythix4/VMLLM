@@ -1,0 +1,382 @@
+{
+  "title": "VM Ops -- Cardinality & Performance",
+  "uid": "vm-ops",
+  "schemaVersion": 38,
+  "version": 7,
+  "editable": true,
+  "tags": [
+    "victoriametrics",
+    "self-monitoring"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "id": 1000,
+      "title": "What this dashboard shows",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Audience: SRE / Platform.** All metrics are scraped from VictoriaMetrics' own `/metrics` endpoint by vmagent. If panels stay empty after 60s, run `make diagnose` -- it likely means vmagent isn't scraping `victoriametrics:8428` (check `prometheus.yml`)."
+      }
+    },
+    {
+      "type": "row",
+      "title": "Cardinality",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 100
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Estimated active series",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "description": "Best-effort from vm_cache_entries. The exact 'active series' value lives at /api/v1/status/tsdb.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(vm_cache_entries{type=~\".*hour_metric_ids.*|.*active.*\"})) or sum(vm_cache_entries) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Samples ingested / s",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 6,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rps"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "samples/s",
+          "expr": "(sum(rate(vm_rows_inserted_total[1m]))) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "New series created / s (churn)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "new series/s",
+          "expr": "(sum(rate(vm_new_timeseries_created_total[5m]))) or (sum(rate(vm_new_timeseries_created[5m]))) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Storage & RAM",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 200
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Disk usage (data parts)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "data on disk",
+          "expr": "sum(vm_data_size_bytes)"
+        }
+      ],
+      "description": "Total disk used by VM data + index files (sum across types)."
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Process RSS memory (all VM components)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{job}}",
+          "expr": "(process_resident_memory_bytes{job=~\"victoriametrics|vmagent|vmalert\"}) or process_resident_memory_bytes"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Query performance",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 300
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Average query duration (sum/count)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
+      "description": "Mean query duration via vm_request_duration_seconds_sum / _count. VM uses internal vmrange-style buckets so direct histogram_quantile on _bucket doesn't work.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.95
+              }
+            ]
+          },
+          "noValue": "Wait 30s for first scrape -- queries to VM populate this fast."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{job}}",
+          "expr": "sum(rate(vm_request_duration_seconds_sum[5m])) / clamp_min(sum(rate(vm_request_duration_seconds_count[5m])), 0.001)"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Active goroutines (concurrency proxy)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
+      "description": "Standard Go runtime metric. Tracks in-flight work. Healthy: stable. Climbing without bound: a goroutine leak.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "Waiting for first scrape..."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{job}}",
+          "expr": "go_goroutines{job=~\"victoriametrics|vmagent|vmalert\"}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Scrape health (vmagent's view)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "description": "vmagent emits up=1 for each successful scrape, up=0 on failure. If a row is missing, the target is not in prometheus.yml.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"victoriametrics|vmagent|vmalert|llm-simulator\"}",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Top noisy labels (manual exploration)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 400
+    },
+    {
+      "id": 30,
+      "type": "text",
+      "title": "Cardinality drill-down",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Live cardinality stats**\n\n- [vmui Cardinality](http://localhost:8428/vmui/#/?tab=cardinality) -- top labels, top metrics, top label-value pairs\n- [tsdb status JSON](http://localhost:8428/api/v1/status/tsdb)\n\n**Discover what self-metrics VM exposes**\n```\n# What duration / request / http metrics does THIS VM version expose?\ndocker exec vm-llm wget -qO- http://localhost:8428/metrics \\\n    | grep -E '^vm_(request|http|duration)|duration_seconds' \\\n    | grep -v '^#' | head -20\n```\n\n**Universal fallback metrics (always exposed by Go services)**\n- `process_cpu_seconds_total` (counter)\n- `process_resident_memory_bytes` (gauge)\n- `go_goroutines` (gauge -- concurrency proxy)\n- `go_memstats_alloc_bytes` (gauge -- allocator pressure)\n- `up{job=...}` (synthetic, vmagent-emitted)"
+      }
+    }
+  ]
+}

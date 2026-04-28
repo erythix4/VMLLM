@@ -1,0 +1,146 @@
+version: '3.8'
+
+# VictoriaMetrics LLM Observability Lab -- Single mode
+# Stack: VM Single + OTel Collector + vmagent + VMAlert + Alertmanager + Grafana
+#        + simulator (Prometheus client) + llm-app (OTLP-instrumented FastAPI)
+# Reference: Module 4.1 of the training guide
+
+services:
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.99.0
+    container_name: vm-llm
+    command:
+      - '--storageDataPath=/var/lib/victoria-metrics-data'
+      - '--retentionPeriod=12'
+      - '--httpListenAddr=:8428'
+      - '--search.maxQueryLen=16384'
+      - '--search.maxSamplesPerQuery=1000000000'
+      - '--memory.allowedPercent=60'
+      - '--loggerFormat=json'
+    ports:
+      - '8428:8428'
+    volumes:
+      - vm-data:/var/lib/victoria-metrics-data
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: otel-collector-llm
+    command: ['--config=/etc/otel-collector-config.yaml']
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+    depends_on:
+      - victoriametrics
+      - llm-simulator
+    restart: unless-stopped
+
+  vmagent:
+    image: victoriametrics/vmagent:v1.99.0
+    container_name: vmagent-llm
+    command:
+      - '--promscrape.config=/etc/prometheus.yml'
+      - '--remoteWrite.url=http://victoriametrics:8428/api/v1/write'
+      # Lab 8 -- uncomment to enable stream aggregation
+      # - '--remoteWrite.streamAggr.config=/etc/streamAggr.yaml'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus.yml:ro
+      - ./streamAggr.yaml:/etc/streamAggr.yaml:ro
+    depends_on:
+      - victoriametrics
+      - llm-simulator
+    restart: unless-stopped
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.99.0
+    container_name: vmalert-llm
+    command:
+      - '--datasource.url=http://victoriametrics:8428'
+      - '--remoteWrite.url=http://victoriametrics:8428/api/v1/write'
+      - '--notifier.url=http://alertmanager:9093'
+      - '--rule=/etc/alerts/*.yml'
+      - '--evaluationInterval=30s'
+      - '--httpListenAddr=:8880'
+    ports:
+      - '8880:8880'
+    volumes:
+      - ./alerts:/etc/alerts:ro
+    depends_on:
+      - victoriametrics
+      - alertmanager
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager-llm
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - '9093:9093'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: grafana-llm
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=victoriametrics-metrics-datasource
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      # Set the lab Home dashboard as the default landing page
+      - GF_USERS_HOME_DASHBOARD_UID=lab-home
+    ports:
+      - '3000:3000'
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - victoriametrics
+    restart: unless-stopped
+
+  # Prometheus-client based simulator -- exposes /metrics on :9100
+  llm-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulator
+    container_name: llm-simulator
+    command: ['--rps', '10', '--models', '3']
+    ports:
+      - '9100:9100'
+    restart: unless-stopped
+
+  # OTLP-instrumented FastAPI app (Module 6.1 -- OTel SDK approach)
+  llm-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: llm-app
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=llm-demo-app
+    ports:
+      - '8001:8000'
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  # Continuous traffic generator hitting llm-app
+  llm-traffic:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.traffic
+    container_name: llm-traffic
+    environment:
+      - APP_URL=http://llm-app:8000
+      - APP_RPS=5
+    depends_on:
+      - llm-app
+    restart: unless-stopped
+
+volumes:
+  vm-data: {}
+  grafana-data: {}

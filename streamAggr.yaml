@@ -1,0 +1,32 @@
+# Stream aggregation config for vmagent
+# Reference: https://docs.victoriametrics.com/stream-aggregation/
+#
+# In production, intervals would be 1h+. For the lab we use 1m so
+# aggregated series appear within ~1 min of vmagent start.
+
+# Roll cost counters into 1-min windows for the lab
+- match: 'llm_cost_usd_total'
+  interval: 1m
+  outputs: [total]
+  by: [model, provider, tenant_id]
+  output_relabel_configs:
+    - target_label: __name__
+      replacement: 'llm:cost_usd:agg1h'
+
+# Pre-compute requests-per-minute by model
+- match: 'llm_requests_total'
+  interval: 1m
+  outputs: [increase]
+  by: [model, provider]
+  output_relabel_configs:
+    - target_label: __name__
+      replacement: 'llm:requests:agg1m'
+
+# Pre-compute token throughput
+- match: 'llm_tokens_total'
+  interval: 1m
+  outputs: [increase]
+  by: [model, type]
+  output_relabel_configs:
+    - target_label: __name__
+      replacement: 'llm:tokens:agg1m'

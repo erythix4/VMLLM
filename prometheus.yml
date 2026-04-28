@@ -1,0 +1,54 @@
+# vmagent scrape configuration
+# Reference: Module 4.3 of the training guide
+#
+# In the lab only the llm-simulator target exists. Real production targets
+# (DCGM, vLLM, Ollama, LiteLLM) are kept as commented blocks so you can
+# uncomment when the corresponding services are deployed.
+
+global:
+  scrape_interval: 15s
+  external_labels:
+    cluster: 'lab-llm'
+    environment: 'lab'
+
+scrape_configs:
+
+  # === ACTIVE in the lab ===
+
+  - job_name: 'llm-simulator'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['llm-simulator:9100']
+        labels:
+          source: 'simulator'
+
+  - job_name: 'victoriametrics'
+    static_configs:
+      - targets: ['victoriametrics:8428']
+
+  - job_name: 'vmalert'
+    static_configs:
+      - targets: ['vmalert:8880']
+
+  # === COMMENTED -- uncomment in real production ===
+
+  # - job_name: 'dcgm-exporter'
+  #   scrape_interval: 5s
+  #   kubernetes_sd_configs:
+  #     - role: pod
+  #   relabel_configs:
+  #     - source_labels: [__meta_kubernetes_pod_label_app]
+  #       regex: dcgm-exporter
+  #       action: keep
+  #
+  # - job_name: 'vllm'
+  #   static_configs:
+  #     - targets: ['vllm-llama:8000', 'vllm-mistral:8001']
+  #
+  # - job_name: 'ollama'
+  #   static_configs:
+  #     - targets: ['ollama:11434']
+  #
+  # - job_name: 'litellm'
+  #   static_configs:
+  #     - targets: ['litellm-proxy:4000']

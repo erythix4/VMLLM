@@ -1,0 +1,58 @@
+# Recording rules for LLM observability
+# Reference: Module 10 of the training guide
+# Pre-compute expensive aggregations (cost, p95/p99 latency, RAG quality)
+# 10-100x faster dashboard queries.
+groups:
+
+  - name: llm_recording_rules
+    interval: 1m
+    rules:
+
+      - record: llm:cost_usd:rate1h
+        expr: |
+          sum by (model, provider, tenant_id) (
+              increase(llm_cost_usd_total[1h])
+          )
+
+      - record: llm:cost_usd:rate24h
+        expr: |
+          sum by (model, provider, tenant_id) (
+              increase(llm_cost_usd_total[24h])
+          )
+
+      - record: llm:error_rate:ratio5m
+        expr: |
+          sum by (model, provider) (rate(llm_errors_total[5m]))
+            /
+          sum by (model, provider) (rate(llm_requests_total[5m]))
+
+      - record: llm:request_duration_ms:p99_5m
+        expr: |
+          histogram_quantile(0.99,
+              sum by (le, model, pipeline_id) (
+                  rate(llm_request_duration_ms_bucket[5m])
+              )
+          )
+
+      - record: llm:ttft_ms:p95_5m
+        expr: |
+          histogram_quantile(0.95,
+              sum by (le, model) (rate(llm_ttft_ms_bucket[5m]))
+          )
+
+      - record: rag:retrieval_score:avg30m
+        expr: |
+          avg by (index_id, pipeline_id) (
+              avg_over_time(rag_retrieval_score_avg[30m])
+          )
+
+      - record: rag:context_pressure:p95_10m
+        expr: |
+          histogram_quantile(0.95,
+              sum by (le, pipeline_id) (
+                  rate(rag_context_pressure_ratio_bucket[10m])
+              )
+          )
+
+      - record: gpu:memory_utilization:ratio
+        expr: DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL

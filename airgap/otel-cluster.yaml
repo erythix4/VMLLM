@@ -1,0 +1,25 @@
+receivers:
+  otlp:
+    protocols:
+      grpc: {endpoint: 0.0.0.0:4317}
+      http: {endpoint: 0.0.0.0:4318}
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: llm-simulator
+          scrape_interval: 5s
+          static_configs:
+            - targets: ['llm-simulator:9100']
+processors:
+  batch: {timeout: 5s, send_batch_size: 512}
+exporters:
+  prometheusremotewrite:
+    endpoint: http://vminsert:8480/insert/0/prometheus/api/v1/write
+    timeout: 30s
+    retry_on_failure: {enabled: true, initial_interval: 5s}
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [batch]
+      exporters: [prometheusremotewrite]

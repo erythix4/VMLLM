@@ -1,0 +1,70 @@
+# Alertmanager routing
+# Reference: Module 9.2 of the training guide
+# In the lab the receivers are dummy webhook.site URLs — replace with your
+# real Slack / PagerDuty hooks for Lab 3.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'model', 'pipeline_id']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  receiver: 'default'
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: pagerduty
+      continue: true
+    - matchers:
+        - team="ai-platform"
+      receiver: slack-ai-platform
+    - matchers:
+        - team="billing"
+      receiver: slack-billing
+    - matchers:
+        - team="mlops"
+      receiver: slack-mlops
+
+receivers:
+
+  - name: 'default'
+    webhook_configs:
+      - url: 'https://webhook.site/REPLACE-ME-DEFAULT'
+        send_resolved: true
+
+  - name: 'slack-ai-platform'
+    webhook_configs:
+      - url: 'https://webhook.site/REPLACE-ME-AI-PLATFORM'
+        send_resolved: true
+    # Replace by real Slack config once you have a webhook URL:
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+    #     channel: '#llm-ops-alerts'
+    #     title: '{{ .CommonAnnotations.summary }}'
+    #     text:  '{{ .CommonAnnotations.description }}'
+
+  - name: 'slack-billing'
+    webhook_configs:
+      - url: 'https://webhook.site/REPLACE-ME-BILLING'
+        send_resolved: true
+
+  - name: 'slack-mlops'
+    webhook_configs:
+      - url: 'https://webhook.site/REPLACE-ME-MLOPS'
+        send_resolved: true
+
+  - name: 'pagerduty'
+    webhook_configs:
+      - url: 'https://webhook.site/REPLACE-ME-PD'
+        send_resolved: true
+    # pagerduty_configs:
+    #   - routing_key: 'YOUR_PAGERDUTY_KEY'
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ['alertname', 'model', 'pipeline_id']

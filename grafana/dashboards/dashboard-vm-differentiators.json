@@ -1,0 +1,641 @@
+{
+  "title": "VM Differentiators -- Demo & Training",
+  "uid": "vm-diff",
+  "schemaVersion": 38,
+  "version": 6,
+  "editable": true,
+  "graphTooltip": 1,
+  "tags": [
+    "victoriametrics",
+    "demo",
+    "training",
+    "metricsql"
+  ],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "id": 1000,
+      "title": "How to use this dashboard",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Audience: sales engineering, training, technical evaluators.** Each row demonstrates one VictoriaMetrics-only feature.\n\n### Make panels show their value\nMost panels here are **flat in idle conditions** -- the features need data to demonstrate themselves. Run a demo loader to populate:\n\n| Row | What to run | Time to visible |\n|---|---|---|\n| 1 -- MetricsQL exclusive | `make demo-row1` | 30s |\n| 2 -- Stream aggregation | `make demo-row2` | 60s |\n| 3 -- OTel histograms | `make demo-row3` | 30s |\n| 4 -- Cardinality | `make demo-row4` | 5s |\n| **All at once** | `make demo-all` | 60s |\n| Revert | `make demo-clean` | 30s |\n\nOpen the corresponding `solutions/lab*.md` for the full conceptual walkthrough.\n\n**Empty panels?** That's expected before running the demo loader -- each panel's `noValue` describes what it needs."
+      }
+    },
+    {
+      "type": "row",
+      "id": 100,
+      "title": "Row 1 -- MetricsQL functions PromQL doesn't have",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "collapsed": false
+    },
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "1. Z-score deviation (manual, no anomaly_score in OSS)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "description": "Live deviation of avg RAG score vs its 30m baseline. Falls back to (current - 0.82) before 30m of history is available.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          },
+          "noValue": "Waiting for 5+ min of history. Current behavior: shows live deviation from 30m mean."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "z-score",
+          "expr": "scalar((avg(rag_retrieval_score_avg) - avg(avg_over_time(rag_retrieval_score_avg[30m]))) / clamp_min(avg(stddev_over_time(rag_retrieval_score_avg[30m])), 0.001)) or scalar(rag_retrieval_score_avg) - 0.82"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "2. outliers_iqr -- statistically abnormal models",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "description": "Returns only series outside the IQR fence. Empty graph when nothing is abnormal -- expected most of the time.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No outliers detected (expected most of the time)."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{model}}",
+          "expr": "outliers_iqr(histogram_quantile(0.5, sum by (le, model)(rate(llm_request_duration_ms_bucket[5m]))))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "3. share_le_over_time (% time RAG <= 0.85, last 30m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "description": "Threshold 0.85 picks up natural variation; with 0.70 it stays at 0 in nominal regime. PromQL has no equivalent.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "noValue": "0% -- waiting for first samples below 0.85. Inject drift via `make lab3-drift` to see it move."
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(avg(share_le_over_time(rag_retrieval_score_avg[30m], 0.85))) * 100"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "4. quantiles_over_time -- P50/P95/P99 from a gauge (1 query)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
+      "description": "Three quantiles in ONE query (correct MetricsQL syntax: phi-label first, then phi values, then range vector).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "noValue": "Waiting for 30 min of gauge history..."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "phi={{phi}}",
+          "expr": "quantiles_over_time(\"phi\", 0.5, 0.95, 0.99, rag_retrieval_score_avg[30m])"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "5. histogram_avg -- mean from a histogram",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
+      "description": "Cleaner than rate(_sum)/rate(_count). Respects bucket midpoints.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "Waiting for first histogram observations..."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{model}}",
+          "expr": "histogram_avg(sum by (le, model)(rate(llm_request_duration_ms_bucket[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "6. keep_last_value -- gap-tolerant gauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      },
+      "description": "Carries the last non-empty value forward across scrape gaps. Eliminates 'no data' false-positive alerts during k8s rolling restarts. Signature: keep_last_value(q) -- single argument, no explicit lookbehind.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "noValue": "Should populate immediately -- check vmui that rag_retrieval_score_avg has samples."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{index_id}}",
+          "expr": "keep_last_value(avg by (index_id)(rag_retrieval_score_avg))"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 200,
+      "title": "Row 2 -- vmagent stream aggregation (run make lab8-streamaggr)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "collapsed": false
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Cardinality: raw vs aggregated",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "description": "Run `make lab8-streamaggr` to populate the green (agg1h) series. Stream aggr cuts cardinality 10x at ingestion.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "raw  llm_cost_usd_total",
+          "expr": "(count(llm_cost_usd_total)) or vector(0)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "agg1h  llm:cost_usd:agg1h",
+          "expr": "(count({__name__=\"llm:cost_usd:agg1h\"})) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Cardinality reduction ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(count(llm_cost_usd_total) or vector(0)) / clamp_min((count({__name__=\"llm:cost_usd:agg1h\"}) or vector(1)), 1)"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Stream aggr active?",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OFF -- run make lab8-streamaggr",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "ON",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((count({__name__=\"llm:cost_usd:agg1h\"}) or vector(0)), 1)"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "13. Same metric, two retentions (raw rate vs aggregated)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "description": "Raw is now shown projected to /day so it's visible (lab data has tiny absolute cost). Aggregated stays in absolute USD.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "noValue": "Waiting for cost samples. Run `make lab8-streamaggr` for the green line."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "raw rate projected /day",
+          "expr": "(sum(rate(llm_cost_usd_total[5m])) * 86400)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "agg1h running total",
+          "expr": "(sum({__name__=\"llm:cost_usd:agg1h\"})) or vector(0)"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 300,
+      "title": "Row 3 -- OTel exponential vs explicit histograms",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "collapsed": false
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "P99 latency -- Prometheus client path (llm-simulator via vmagent scrape)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "description": "From llm-simulator (Prometheus client) scraped by vmagent. Resolution capped by the explicit buckets pre-defined in the simulator.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "P99 explicit",
+          "expr": "(histogram_quantile(0.99, sum by (le)(rate(llm_request_duration_ms_bucket{job=\"llm-simulator\"}[5m])))) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "P99 latency -- OTLP metric path (llm-app via OTel)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
+      "description": "From llm-app via OTLP gRPC. The metric name has '_milliseconds' suffix appended by the OTel exporter because the instrument's unit='ms'. This is the actual OTLP push path, distinct from spanmetrics.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "Wait 30s after llm-app starts -- first OTLP batch flushes every 5s."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "P99 OTLP push",
+          "expr": "histogram_quantile(0.99, sum by (le)(rate(llm_request_duration_ms_milliseconds_bucket[5m])))"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "P99 latency -- spanmetrics (traces -> RED via OTel connector)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "description": "From the OTel collector's spanmetrics CONNECTOR. RED metrics derived automatically from traces emitted by llm-app. Carries gen_ai.* and rag.* dimensions as labels.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "spanmetrics requires traces to flow. Check OTel collector logs for TracesExporter activity."
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "{{service_name}} / {{span_name}}",
+          "expr": "histogram_quantile(0.99, sum by (le, service_name, span_name)(rate(duration_milliseconds_bucket[5m])))"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 400,
+      "title": "Row 4 -- Cardinality observation (run make lab7-explode)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "collapsed": false
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Active series in VM (total ingested)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "description": "Watch this jump when you run `make lab7-explode`, drop on `make lab7-cleanup`.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "legendFormat": "rows ingested /s",
+          "expr": "(sum(rate(vm_rows_inserted_total[1m]))) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Lab 7 demo series count",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vm-llm-prom"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 46
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(count(llm_demo_bad_metric)) or vector(0)"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "text",
+      "title": "Cardinality endpoints (browser links)",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 46
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Live cardinality stats**\n\n- [VM tsdb status (JSON)](http://localhost:8428/api/v1/status/tsdb)\n- [vmui Cardinality tab](http://localhost:8428/vmui/#/?tab=cardinality)\n- [Top labels by cardinality](http://localhost:8428/api/v1/status/tsdb?topN=10)\n\n**Demo flow**\n1. `make lab7-explode` -> jumps\n2. `make lab7-cleanup` -> drops\n3. Watch the panels react in 30 s"
+      }
+    }
+  ]
+}

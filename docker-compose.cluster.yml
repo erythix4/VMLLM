@@ -1,0 +1,163 @@
+version: '3.8'
+
+# VictoriaMetrics LLM Observability Lab -- CLUSTER mode
+# Reference: Module 3 of the training guide
+#
+# Compared to the Single-mode docker-compose.yml, this swaps the single
+# `victoriametrics` binary for the 3-component cluster:
+#
+#   vminsert  (port 8480)  <-- ingestion (Prometheus remote_write, OTLP)
+#   vmstorage x2           <-- storage shards (vmstorage-1 / vmstorage-2)
+#   vmselect  (port 8481)  <-- query layer for Grafana, vmalert
+#
+# All other services (otel-collector, vmagent, vmalert, alertmanager,
+# grafana, llm-simulator) reuse their Single-mode configs but are repointed
+# to vminsert (ingestion) and vmselect (queries).
+
+services:
+
+  vmstorage-1:
+    image: victoriametrics/vmstorage:v1.99.0-cluster
+    container_name: vmstorage-1
+    command:
+      - '--storageDataPath=/storage'
+      - '--retentionPeriod=12'
+      - '--httpListenAddr=:8482'
+      - '--vminsertAddr=:8400'
+      - '--vmselectAddr=:8401'
+    volumes:
+      - vmstorage-1-data:/storage
+    restart: unless-stopped
+
+  vmstorage-2:
+    image: victoriametrics/vmstorage:v1.99.0-cluster
+    container_name: vmstorage-2
+    command:
+      - '--storageDataPath=/storage'
+      - '--retentionPeriod=12'
+      - '--httpListenAddr=:8482'
+      - '--vminsertAddr=:8400'
+      - '--vmselectAddr=:8401'
+    volumes:
+      - vmstorage-2-data:/storage
+    restart: unless-stopped
+
+  vminsert:
+    image: victoriametrics/vminsert:v1.99.0-cluster
+    container_name: vminsert
+    command:
+      - '--storageNode=vmstorage-1:8400,vmstorage-2:8400'
+      - '--httpListenAddr=:8480'
+      - '--replicationFactor=2'
+    ports:
+      - '8480:8480'
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: unless-stopped
+
+  vmselect:
+    image: victoriametrics/vmselect:v1.99.0-cluster
+    container_name: vmselect
+    command:
+      - '--storageNode=vmstorage-1:8401,vmstorage-2:8401'
+      - '--httpListenAddr=:8481'
+      - '--cacheDataPath=/cache'
+      - '--search.maxQueryLen=16384'
+    ports:
+      - '8481:8481'
+    volumes:
+      - vmselect-cache:/cache
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: unless-stopped
+
+  # Reuse OTel Collector but point its remote_write to vminsert
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.99.0
+    container_name: otel-collector-cluster
+    command: ['--config=/etc/otel-collector-config.yaml']
+    volumes:
+      - ./airgap/otel-cluster.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+    depends_on:
+      - vminsert
+      - llm-simulator
+    restart: unless-stopped
+
+  vmagent:
+    image: victoriametrics/vmagent:v1.99.0
+    container_name: vmagent-cluster
+    command:
+      - '--promscrape.config=/etc/prometheus.yml'
+      - '--remoteWrite.url=http://vminsert:8480/insert/0/prometheus/api/v1/write'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus.yml:ro
+    depends_on:
+      - vminsert
+      - llm-simulator
+    restart: unless-stopped
+
+  vmalert:
+    image: victoriametrics/vmalert:v1.99.0
+    container_name: vmalert-cluster
+    command:
+      - '--datasource.url=http://vmselect:8481/select/0/prometheus'
+      - '--remoteWrite.url=http://vminsert:8480/insert/0/prometheus'
+      - '--notifier.url=http://alertmanager:9093'
+      - '--rule=/etc/alerts/*.yml'
+      - '--evaluationInterval=30s'
+      - '--httpListenAddr=:8880'
+    ports:
+      - '8880:8880'
+    volumes:
+      - ./alerts:/etc/alerts:ro
+    depends_on:
+      - vmselect
+      - alertmanager
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager-cluster
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - '9093:9093'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: grafana-cluster
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=victoriametrics-metrics-datasource
+    ports:
+      - '3000:3000'
+    volumes:
+      - grafana-cluster-data:/var/lib/grafana
+      - ./airgap/grafana-cluster-datasources.yml:/etc/grafana/provisioning/datasources/vm.yaml:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - vmselect
+    restart: unless-stopped
+
+  llm-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.simulator
+    container_name: llm-simulator-cluster
+    command: ['--rps', '10', '--models', '3']
+    ports:
+      - '9100:9100'
+    restart: unless-stopped
+
+volumes:
+  vmstorage-1-data: {}
+  vmstorage-2-data: {}
+  vmselect-cache: {}
+  grafana-cluster-data: {}

@@ -1,0 +1,263 @@
+{
+  "title": "Home -- VictoriaMetrics LLM Lab",
+  "uid": "lab-home",
+  "schemaVersion": 38,
+  "version": 2,
+  "editable": true,
+  "tags": [
+    "home",
+    "guide",
+    "llm-observability"
+  ],
+  "timezone": "browser",
+  "refresh": "",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Welcome",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## VictoriaMetrics LLM Observability Lab\n\nCompanion to the **Erythix premium training** *\"VictoriaMetrics as an LLM Observability Backend\"*. Every panel and command in the 3 dashboards is documented below.\n\n### The 3 dashboards (Dashboards menu -> *LLM Observability* folder)\n\n| Dashboard | Audience | When to open |\n|---|---|---|\n| [LLM Observability -- Production](/d/llm-prod) | Business / LLM Ops | Daily monitoring, SLO check, cost tracking |\n| [VM Ops -- Cardinality & Performance](/d/vm-ops) | SRE / Platform | When VM itself feels slow, or cardinality climbs |\n| [VM Differentiators -- Demo & Training](/d/vm-diff) | POC / Sales / Training | Showcase what makes VM unique vs Prom |\n\n### External UIs\n- [vmui](http://localhost:8428/vmui) -- raw MetricsQL playground + cardinality drill-down\n- [vmalert](http://localhost:8880) -- alert state + rule evaluation\n- [Alertmanager](http://localhost:9093) -- notification routing\n- [llm-app](http://localhost:8001/health) -- OTLP-instrumented FastAPI demo\n\n### Quickstart commands (`make help` for all)\n```\nmake up            # start the stack\nmake diagnose      # health check (5 steps)\nmake lab3-drift    # inject RAG quality drift (Lab 3)\nmake lab7-explode  # inject high cardinality (Lab 7)\nmake lab8-streamaggr  # turn on stream aggregation (Lab 8)\nmake lab5-airgap   # MinIO + vmbackup + vmauth (Lab 5)\nmake cluster-up    # switch to Cluster mode\n```\n"
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Module 13 of the guide -- 4 core labs",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Lab 1 -- Deploy stack and ingest first metrics",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Deploy the Docker Compose stack and verify end-to-end metric flow.\n**Time** 30 min \u00b7 **Level** beginner\n\n**Commands**\n```\nmake up\nsleep 60\nmake diagnose\n```\n\n**Metrics monitored** -- the simulator emits all 10 LLM metrics from Module 5:\n- `llm_requests_total{model, provider, pipeline_id, status}`\n- `llm_request_duration_ms_*` (histogram)\n- `llm_tokens_total{type=input|output}`\n- `llm_cost_usd_total{tenant_id, use_case}`\n- `llm_ttft_ms_*` (histogram)\n- `llm_errors_total{error_type, status_code}`\n- `rag_retrieval_score_avg{index_id, pipeline_id}`\n- `rag_context_pressure_ratio_*` (histogram)\n- `rag_chunks_dropped_total`\n- `DCGM_FI_DEV_*` (GPU)\n\n**Dashboard panels** all 14 panels of [LLM Observability -- Production](/d/llm-prod).\n"
+      }
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "Lab 2 -- Write 5 MetricsQL queries",
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Write the 5 essential production queries from Module 7.\n**Time** 40 min \u00b7 **Level** intermediate \u00b7 **Doc** `solutions/lab2-queries.md`\n\n**The 5 queries**\n1. **Total cost by model (24h)** -- `sum by (model)(increase(llm_cost_usd_total[24h]))`\n2. **TTFT P95 by provider** -- `histogram_quantile(0.95, sum by (le, provider)(rate(llm_ttft_ms_bucket[5m])))`\n3. **RAG anomaly** -- z-score over 30 min baseline (vmanomaly `anomaly_score()` is Enterprise-only)\n4. **Top 5 tenants by cost** -- `topk(5, sum by (tenant_id)(increase(llm_cost_usd_total[24h])))`\n5. **GPU efficiency** -- tokens/s divided by GPU watts\n\n**Where to try them** open [vmui](http://localhost:8428/vmui), paste each query, save the ones you like as Grafana panels.\n"
+      }
+    },
+    {
+      "id": 13,
+      "type": "text",
+      "title": "Lab 3 -- Configure a production alert",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Trigger the `RAGIndexDrift` alert and watch routing through Alertmanager.\n**Time** 25 min \u00b7 **Level** intermediate\n\n**Commands**\n```\nmake lab3-drift     # inject score drift = 0.5x baseline\n# wait 15 min for the alert to fire\nmake lab3-restore   # back to nominal\n```\n\n**Alert rule monitored**\n```\navg by (index_id, pipeline_id) (\n    avg_over_time(rag_retrieval_score_avg[1h])\n) < 0.70   for: 15m\n```\n\n**Verification** [vmalert UI](http://localhost:8880) shows *firing* after ~15 min, then visible in [Alertmanager](http://localhost:9093) routing to `slack-ai-platform`.\n\n**The 7 production alerts** RAGIndexDrift, RAGContextPressureHigh, LLMHighErrorRate, LLMLatencySLOBreach, GPUMemorySaturation, LLMDailyBudgetWarning, LLMTTFTHigh. One trigger script per alert in `scripts/triggers/`.\n"
+      }
+    },
+    {
+      "id": 14,
+      "type": "text",
+      "title": "Lab 4 -- Recording rules speed-up",
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Measure the 10-100x query speedup from pre-aggregation.\n**Time** 20 min \u00b7 **Level** advanced \u00b7 **Doc** `solutions/lab4-recording-rules.md`\n\n**The 8 recording rules**\n- `llm:cost_usd:rate1h` / `:rate24h` -- pre-rolled cost\n- `llm:error_rate:ratio5m` -- ratio without recomputation\n- `llm:request_duration_ms:p99_5m` -- P99 latency\n- `llm:ttft_ms:p95_5m` -- P95 TTFT\n- `rag:retrieval_score:avg30m`\n- `rag:context_pressure:p95_10m`\n- `gpu:memory_utilization:ratio`\n\n**Benchmark**\n```\ntime curl -sG 'http://localhost:8428/api/v1/query' \\\n    --data-urlencode 'query=histogram_quantile(0.99, sum by (le, model, pipeline_id)(rate(llm_request_duration_ms_bucket[5m])))' > /dev/null\n\ntime curl -sG 'http://localhost:8428/api/v1/query' \\\n    --data-urlencode 'query=llm:request_duration_ms:p99_5m' > /dev/null\n```\n\nLab cardinality is small so speedup is modest (~3x); on 5M-series prod it's 100x+.\n"
+      }
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Bonus enrichments",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 21,
+      "type": "text",
+      "title": "Lab 5 -- Backup, vmauth, air-gap (Module 12)",
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Production-grade controls: object-storage backups + multi-role reverse proxy.\n**Time** 35 min \u00b7 **Level** advanced \u00b7 **Doc** `solutions/lab5-backup-airgap.md`\n\n**Components added** -- `make lab5-airgap`\n- **MinIO** S3-compatible storage, port 9000 + console 9001 (admin/admin12345)\n- **vmbackup** -- snapshots VM data every 5 min -> `s3://vm-backups/auto`\n- **vmauth** (port 8427) -- 3 roles\n  - `grafana / grafana-password` -- read-only on `/api/v1/query*`\n  - `otel-collector / otel-password` -- write-only on `/api/v1/write`\n  - `admin / admin-password` -- everything\n\n**Restore drill** wipe vm volume, run `vmrestore` from MinIO, restart VM. Procedure in the doc.\n"
+      }
+    },
+    {
+      "id": 22,
+      "type": "text",
+      "title": "Cluster mode (Module 3)",
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Switch from Single-mode to a 3-component VM cluster.\n**Time** 15 min \u00b7 **Level** intermediate\n\n**Commands**\n```\nmake down            # stop Single mode (port conflict)\nmake cluster-up      # start cluster\nmake cluster-down\n```\n\n**Architecture differences**\n- **vminsert** (port 8480) replaces direct VM ingestion\n- **vmselect** (port 8481) replaces direct VM queries\n- **vmstorage x2** with `--replicationFactor=2` -- survives one shard loss\n- Same dashboards, alerts, OTel pipeline\n\n**When to migrate** > 500k active series OR P99 write latency > 50ms OR HA SLA required.\n"
+      }
+    },
+    {
+      "id": 23,
+      "type": "text",
+      "title": "Trigger every alert in 30 s",
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Validate Alertmanager routing without waiting for natural conditions.\n\n**The 7 trigger scripts** in `scripts/triggers/`\n- `01_rag_index_drift.sh` -- fires RAGIndexDrift (15m)\n- `02_rag_context_pressure.sh` -- RAGContextPressureHigh (5m)\n- `03_llm_high_error_rate.sh` -- LLMHighErrorRate (3m)\n- `04_llm_latency_slo.sh` -- LLMLatencySLOBreach (5m)\n- `05_gpu_memory_sat.sh` -- GPUMemorySaturation (2m)\n- `06_llm_daily_budget.sh` -- LLMDailyBudgetWarning (instant)\n- `07_llm_ttft_high.sh` -- LLMTTFTHigh (5m)\n\n```\nbash scripts/triggers/03_llm_high_error_rate.sh\n# wait 3 min, check vmalert + Alertmanager\nbash scripts/triggers/_restore.sh\n```\n"
+      }
+    },
+    {
+      "id": 24,
+      "type": "text",
+      "title": "Other goodies",
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 9
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**OTel-instrumented FastAPI app** (`llm-app` on port 8001)\n- Module 6.1 OTel SDK approach\n- Pushes traces (`gen_ai.*` + `rag.*` attributes) and metrics via OTLP gRPC\n- Uses **exponential histograms** (no bucket pre-pick)\n- Test:\n```\ncurl -X POST http://localhost:8001/rag \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"gpt-4o\",\"provider\":\"openai\"}'\n```\n\n**Spanmetrics connector** traces -> RED metrics via the OTel collector\n\n**`make backfill`** ingest 30 days of historical cost CSV via vmctl (reconcile billing vs observability)\n\n**`bash scripts/verify_panels.sh`** audit every dashboard panel against live VM and report which return empty\n\n**`make help`** the full Makefile target list\n"
+      }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "VM-differentiator labs (the why-VM-not-Prom labs)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 31,
+      "type": "text",
+      "title": "Lab 6 -- MetricsQL functions PromQL cannot do",
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 11
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Demonstrate 6 MetricsQL functions that have NO PromQL equivalent.\n**Time** 30 min \u00b7 **Level** intermediate \u00b7 **Doc** `solutions/lab6-metricsql-exclusive.md`\n**Live in** [VM Differentiators dashboard](/d/vm-diff) -> Row 1\n\n| # | Function | What it solves |\n|---|---|---|\n| 1 | manual z-score (`anomaly_score` is vmanomaly Enterprise) | RAG drift without static thresholds |\n| 2 | `outliers_iqr(...)` | Light up only the model whose latency just broke |\n| 3 | `share_le_over_time(m[d], threshold)` | Exact \"% time SLO was missed\" |\n| 4 | `quantiles_over_time(\"phi\", 0.5, 0.95, 0.99, m[d])` | P50/P95/P99 from a gauge in one query, properly labelled |\n| 5 | `histogram_avg(rate(m_bucket[5m]))` | Clean mean from a histogram, label-mismatch tolerant |\n| 6 | `keep_last_value(m, 5m)` | Carry last value forward -- no false \"no data\" alerts |\n\n**Bonus** `range_normalize(...)` compares metrics on different scales.\n"
+      }
+    },
+    {
+      "id": 32,
+      "type": "text",
+      "title": "Lab 7 -- Cardinality observation and remediation",
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Observe cardinality with VM's native endpoints, remediate via vmagent relabel.\n**Time** 30 min \u00b7 **Level** advanced \u00b7 **Doc** `solutions/lab7-cardinality.md`\n**Live in** [VM Differentiators](/d/vm-diff) Row 4 + [VM Ops](/d/vm-ops)\n\n**Commands**\n```\nmake lab7-explode     # inject 5000 high-card series\nmake lab7-cleanup     # delete the demo series\n```\n\n**VM-native cardinality endpoints** (no exporter needed)\n- `GET /api/v1/status/tsdb` top labels, top metrics, top label-value pairs\n- [vmui Cardinality tab](http://localhost:8428/vmui/#/?tab=cardinality)\n\n**Remediation strategies** 1) labeldrop the noisy label, 2) group via `model_family`, 3) restrict `tenant_id` to cost metrics only.\n"
+      }
+    },
+    {
+      "id": 33,
+      "type": "text",
+      "title": "Lab 8 -- vmagent stream aggregation",
+      "gridPos": {
+        "x": 12,
+        "y": 60,
+        "w": 12,
+        "h": 10
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Goal** Pre-aggregate cost metrics AT INGESTION (not at query time).\n**Time** 25 min \u00b7 **Level** advanced \u00b7 **Doc** `solutions/lab8-stream-aggregation.md`\n**Live in** [VM Differentiators](/d/vm-diff) Row 2\n\n**Commands**\n```\nmake lab8-streamaggr   # enable, restart vmagent\n# wait 1 min, then in vmui:\n#   llm:cost_usd:agg1h\n#   llm:requests:agg1m\n#   llm:tokens:agg1m\n```\n\n**The killer feature** vmagent rolls cost from full-cardinality (model x provider x tenant x use_case) to (model x provider x tenant) at 1-hour windows BEFORE writing to VM. Cardinality drops 4-10x. Raw series stay short-retention; aggregated series carry 3-year cost-audit retention.\n\nPrometheus + recording rules can't do this -- they run AFTER the data lands.\n"
+      }
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Help and references",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 70,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 41,
+      "type": "text",
+      "title": "Documentation, troubleshooting, contact",
+      "gridPos": {
+        "x": 0,
+        "y": 71,
+        "w": 24,
+        "h": 7
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Documentation\n- All lab docs in `D:\\labs\\LLMVM\\aiobs-lab\\labs\\victoriametrics-llm\\solutions\\`\n- Training guide -- `guide_victoriametrics_llm_en.docx` at the repo root\n- Slide deck -- `vm_llm_observability_deck.pptx`\n- VictoriaMetrics docs -- https://docs.victoriametrics.com\n- MetricsQL reference -- https://docs.victoriametrics.com/metricsql\n\n### Troubleshooting\n\n| Symptom | Run |\n|---|---|\n| Panels show \"No data\" | `bash scripts/verify_panels.sh` |\n| Stack won't start | `docker compose logs --tail 30 <service>` |\n| Need full health check | `.\\make.cmd diagnose` (Windows) or `make diagnose` (Mac/Linux) |\n| Wipe and restart | `make clean && make up` |\n\n### Contact\n**Erythix** formations@erythix.io  \u00b7  erythix.io\n*Samuel Desseaux -- VictoriaMetrics Training Partner France / Benelux / Germany*\n"
+      }
+    }
+  ]
+}
