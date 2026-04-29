@@ -7,8 +7,8 @@ plus 8 bonus tracks demonstrating VM features that PromQL cannot match.
 ## SETUP
 
 ```bash
-git clone https://github.com/erythix4/aiobs-lab
-cd aiobs-lab/labs/victoriametrics-llm
+git clone https://github.com/erythix4/VLLM
+ls
 make up                    # starts the 9-container stack
 sleep 60
 make diagnose              # verify everything is wired
