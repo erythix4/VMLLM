@@ -18,7 +18,7 @@
 ## 2. Start the stack
 
 ```bash
-cd labs/victoriametrics-llm
+cd VLLM
 make up                # docker compose up -d --build
 sleep 60               # wait for first scrape + simulator warmup
 make diagnose          # 5-step health check
